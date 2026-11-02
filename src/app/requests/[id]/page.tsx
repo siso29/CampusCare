@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CalendarDays,
@@ -12,11 +12,13 @@ import {
 } from 'lucide-react';
 import {
   formatRequestDate,
+  getCurrentUser,
   getCategoryLabel,
   getMaintenanceRequest,
   getMaintenanceRequestImageUrl,
   getPriorityLabel,
   getStatusLabel,
+  updateMaintenanceRequestStatus,
   type RequestPriority,
   type RequestStatus,
 } from '@/lib/campuscare-api';
@@ -35,6 +37,21 @@ const priorityStyles: Record<RequestPriority, string> = {
 
 export default function RequestDetailsPage() {
   const { id } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
+  const currentUserQuery = useQuery({
+    queryKey: ['current-user'],
+    queryFn: ({ signal }) => getCurrentUser(signal),
+  });
+  const statusMutation = useMutation({
+    mutationFn: (status: RequestStatus) => updateMaintenanceRequestStatus(id, status),
+    onSuccess: async (updatedRequest) => {
+      queryClient.setQueryData(['maintenance-request', id], updatedRequest);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['maintenance-requests'] }),
+        queryClient.invalidateQueries({ queryKey: ['maintenance-request-summary'] }),
+      ]);
+    },
+  });
   const requestQuery = useQuery({
     queryKey: ['maintenance-request', id],
     queryFn: ({ signal }) => getMaintenanceRequest(id, signal),
@@ -105,6 +122,31 @@ export default function RequestDetailsPage() {
                 {getPriorityLabel(request.priority)} priority
               </span>
             </div>
+            {(currentUserQuery.data?.role === 'ADMIN' || currentUserQuery.data?.role === 'MAINTENANCE_STAFF') && (
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <label htmlFor="request-status" className="text-sm font-medium text-slate-700">
+                  Update request status
+                </label>
+                <select
+                  id="request-status"
+                  value={request.status}
+                  disabled={statusMutation.isPending}
+                  onChange={(event) => statusMutation.mutate(event.target.value as RequestStatus)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-60"
+                >
+                  <option value="PENDING">Pending</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="RESOLVED">Resolved</option>
+                </select>
+                {statusMutation.isPending && <span className="text-sm text-slate-500">Saving status?</span>}
+                {statusMutation.isSuccess && <span role="status" className="text-sm text-emerald-700">Status updated.</span>}
+                {statusMutation.isError && (
+                  <span role="alert" className="text-sm text-red-700">
+                    {statusMutation.error instanceof Error ? statusMutation.error.message : 'Could not update request status.'}
+                  </span>
+                )}
+              </div>
+            )}
           </header>
 
           <div className="space-y-7 p-6 sm:p-8">
