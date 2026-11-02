@@ -1,51 +1,61 @@
+'use client';
 
-"use client";
-
-import { useState, type FormEvent } from "react";
-import Link from "next/link";
+import { useState, type FormEvent } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
+import { ArrowLeft, UploadCloud, CheckCircle2 } from 'lucide-react';
 import {
-  ArrowLeft,
-  UploadCloud,
-  FileImage,
-  CheckCircle2,
-} from "lucide-react";
+  categoryOptions,
+  createMaintenanceRequest,
+  type MaintenanceRequest,
+  type RequestPriority,
+} from '@/lib/campuscare-api';
 
-const categories = [
-  "Water Supply",
-  "Electricity",
-  "Plumbing",
-  "Cleaning",
-  "Classroom Equipment",
-  "Other",
-];
+function formValue(data: FormData, name: string): string {
+  const value = data.get(name);
+  return typeof value === 'string' ? value : '';
+}
 
 export default function NewRequestPage() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-
-  function handleFileChange(file: File | null) {
-    setSelectedFile(file);
-    setFileError("");
-    setSubmitted(false);
-
-    if (file && file.size > 5 * 1024 * 1024) {
-      setFileError("Image must be smaller than 5 MB.");
-      setSelectedFile(null);
-    }
-
-    if (file && !file.type.startsWith("image/")) {
-      setFileError("Please select a valid image.");
-      setSelectedFile(null);
-    }
-  }
+  const queryClient = useQueryClient();
+  const [createdRequest, setCreatedRequest] =
+    useState<MaintenanceRequest | null>(null);
+  const mutation = useMutation({
+    mutationFn: createMaintenanceRequest,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['maintenance-requests'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['maintenance-request-summary'],
+        }),
+      ]);
+    },
+  });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setCreatedRequest(null);
 
-    if (fileError) return;
+    const form = event.currentTarget;
+    const data = new FormData(form);
 
-    setSubmitted(true);
+    mutation.mutate(
+      {
+        title: formValue(data, 'title'),
+        category: formValue(data, 'category') as MaintenanceRequest['category'],
+        priority: formValue(data, 'priority') as RequestPriority,
+        location: formValue(data, 'location'),
+        description: formValue(data, 'description'),
+      },
+      {
+        onSuccess: (created) => {
+          setCreatedRequest(created);
+          form.reset();
+        },
+      },
+    );
   }
 
   return (
@@ -63,11 +73,9 @@ export default function NewRequestPage() {
           <p className="text-sm font-semibold uppercase tracking-wider text-blue-600">
             CampusCare
           </p>
-
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
             Report a Maintenance Issue
           </h1>
-
           <p className="mt-2 text-slate-500">
             Tell us about the problem so the maintenance team can address it.
           </p>
@@ -75,6 +83,10 @@ export default function NewRequestPage() {
 
         <form
           onSubmit={handleSubmit}
+          onChange={() => {
+            mutation.reset();
+            setCreatedRequest(null);
+          }}
           className="space-y-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
         >
           <div className="grid gap-6 md:grid-cols-2">
@@ -85,7 +97,6 @@ export default function NewRequestPage() {
               >
                 Request Title *
               </label>
-
               <input
                 id="title"
                 name="title"
@@ -104,21 +115,19 @@ export default function NewRequestPage() {
               >
                 Issue Category *
               </label>
-
               <select
                 id="category"
                 name="category"
                 required
                 defaultValue=""
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="" disabled>
                   Select a category
                 </option>
-
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
+                {categoryOptions.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
                   </option>
                 ))}
               </select>
@@ -131,17 +140,16 @@ export default function NewRequestPage() {
               >
                 Priority *
               </label>
-
               <select
                 id="priority"
                 name="priority"
                 required
-                defaultValue="Medium"
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                defaultValue="MEDIUM"
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
               </select>
             </div>
 
@@ -152,7 +160,6 @@ export default function NewRequestPage() {
               >
                 Campus Location *
               </label>
-
               <input
                 id="location"
                 name="location"
@@ -171,7 +178,6 @@ export default function NewRequestPage() {
               >
                 Problem Description *
               </label>
-
               <textarea
                 id="description"
                 name="description"
@@ -189,64 +195,40 @@ export default function NewRequestPage() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
+            <p className="mb-2 block text-sm font-semibold text-slate-700">
               Attach an Image (Optional)
-            </label>
-
-            <label
-              htmlFor="image"
-              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center transition hover:border-blue-400 hover:bg-blue-50"
-            >
-              {selectedFile ? (
-                <>
-                  <FileImage className="mb-3 text-blue-600" size={32} />
-                  <span className="text-sm font-semibold text-slate-800">
-                    {selectedFile.name}
-                  </span>
-                  <span className="mt-1 text-xs text-slate-500">
-                    Click to choose another image
-                  </span>
-                </>
-              ) : (
-                <>
-                  <UploadCloud className="mb-3 text-slate-400" size={32} />
-                  <span className="text-sm font-semibold text-slate-700">
-                    Click to upload an image
-                  </span>
-                  <span className="mt-1 text-xs text-slate-500">
-                    PNG, JPG or other image formats · Maximum 5 MB
-                  </span>
-                </>
-              )}
-            </label>
-
-            <input
-              id="image"
-              name="image"
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(event) =>
-                handleFileChange(event.target.files?.[0] ?? null)
-              }
-            />
-
-            {fileError && (
-              <p className="mt-2 text-sm text-red-600">{fileError}</p>
-            )}
+            </p>
+            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+              <UploadCloud className="mb-3 text-slate-400" size={32} />
+              <span className="text-sm font-semibold text-slate-700">
+                Image uploads are not available yet
+              </span>
+              <span className="mt-1 text-xs text-slate-500">
+                Submit the request details without an image for now.
+              </span>
+            </div>
           </div>
 
-          {submitted && (
+          {mutation.isError && (
+            <p
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            >
+              {mutation.error.message || 'We could not submit your request.'}
+            </p>
+          )}
+
+          {createdRequest && (
             <div
               role="status"
               className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800"
             >
               <CheckCircle2 className="mt-0.5 shrink-0" size={20} />
               <div>
-                <p className="font-semibold">Form validation successful!</p>
+                <p className="font-semibold">Request submitted successfully.</p>
                 <p className="mt-1">
-                  Your request details are valid. This is currently a frontend
-                  demonstration; the request has not been saved to a database.
+                  Your request ID is {createdRequest.id}. It is now saved in
+                  CampusCare.
                 </p>
               </div>
             </div>
@@ -259,12 +241,12 @@ export default function NewRequestPage() {
             >
               Cancel
             </Link>
-
             <button
               type="submit"
-              className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              disabled={mutation.isPending}
+              className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Submit Request
+              {mutation.isPending ? 'Submitting…' : 'Submit Request'}
             </button>
           </div>
         </form>
