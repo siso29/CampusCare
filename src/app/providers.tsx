@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { ApiError, getCurrentUser } from '@/lib/campuscare-api';
@@ -22,4 +22,4 @@ function AuthGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export default function Providers({ children }: { children: ReactNode }) { const [queryClient] = useState(getQueryClient); return <QueryClientProvider client={queryClient}><AuthGate>{children}</AuthGate></QueryClientProvider>; }
+export default function Providers({ children }: { children: ReactNode }) { const [queryClient] = useState(getQueryClient); return <QueryClientProvider client={queryClient}><Suspense fallback={<main className="grid min-h-screen place-items-center bg-slate-50 text-sm text-slate-600">Checking your session…</main>}><AuthGate>{children}</AuthGate></Suspense></QueryClientProvider>; }

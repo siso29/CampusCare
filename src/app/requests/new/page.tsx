@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import Image from 'next/image';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ArrowLeft, UploadCloud, CheckCircle2 } from 'lucide-react';
@@ -20,6 +21,10 @@ export default function NewRequestPage() {
   const queryClient = useQueryClient();
   const [createdRequest, setCreatedRequest] =
     useState<MaintenanceRequest | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imageError, setImageError] = useState('');
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const mutation = useMutation({
     mutationFn: createMaintenanceRequest,
     onSuccess: async () => {
@@ -34,8 +39,39 @@ export default function NewRequestPage() {
     },
   });
 
+  useEffect(
+    () => () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    },
+    [imagePreviewUrl],
+  );
+
+  function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    setSelectedImage(null);
+    setImagePreviewUrl(null);
+    setImageError('');
+    setCreatedRequest(null);
+    mutation.reset();
+
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setImageError('Choose a JPG, PNG, or WebP image.');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError('Image must be smaller than 5 MB.');
+      event.target.value = '';
+      return;
+    }
+    setImagePreviewUrl(URL.createObjectURL(file));
+    setSelectedImage(file);
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (imageError) return;
     setCreatedRequest(null);
 
     const form = event.currentTarget;
@@ -48,10 +84,15 @@ export default function NewRequestPage() {
         priority: formValue(data, 'priority') as RequestPriority,
         location: formValue(data, 'location'),
         description: formValue(data, 'description'),
+        image: selectedImage ?? undefined,
       },
       {
         onSuccess: (created) => {
           setCreatedRequest(created);
+          setSelectedImage(null);
+          setImagePreviewUrl(null);
+          setImageError('');
+          if (imageInputRef.current) imageInputRef.current.value = '';
           form.reset();
         },
       },
@@ -195,18 +236,70 @@ export default function NewRequestPage() {
           </div>
 
           <div>
-            <p className="mb-2 block text-sm font-semibold text-slate-700">
+            <label
+              htmlFor="image"
+              className="mb-2 block text-sm font-semibold text-slate-700"
+            >
               Attach an Image (Optional)
-            </p>
-            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
-              <UploadCloud className="mb-3 text-slate-400" size={32} />
+            </label>
+            <input
+              ref={imageInputRef}
+              id="image"
+              name="image"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleImageChange}
+              aria-describedby={
+                imageError ? 'image-help image-error' : 'image-help'
+              }
+              aria-invalid={Boolean(imageError)}
+              className="peer sr-only"
+            />
+            <label
+              htmlFor="image"
+              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center transition hover:border-blue-400 hover:bg-blue-50 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500"
+            >
+              {imagePreviewUrl ? (
+                <Image
+                  src={imagePreviewUrl}
+                  alt="Selected maintenance issue"
+                  width={160}
+                  height={120}
+                  unoptimized
+                  className="mb-3 max-h-40 w-auto rounded-lg object-cover"
+                />
+              ) : (
+                <UploadCloud className="mb-3 text-slate-400" size={32} />
+              )}
               <span className="text-sm font-semibold text-slate-700">
-                Image uploads are not available yet
+                {selectedImage ? selectedImage.name : 'Choose an image'}
               </span>
-              <span className="mt-1 text-xs text-slate-500">
-                Submit the request details without an image for now.
+              <span id="image-help" className="mt-1 text-xs text-slate-500">
+                JPG, PNG, or WebP · Up to 5 MB
               </span>
-            </div>
+            </label>
+            {selectedImage && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedImage(null);
+                  setImagePreviewUrl(null);
+                  if (imageInputRef.current) imageInputRef.current.value = '';
+                }}
+                className="mt-2 text-sm font-medium text-slate-600 underline hover:text-slate-900"
+              >
+                Remove image
+              </button>
+            )}
+            {imageError && (
+              <p
+                id="image-error"
+                role="alert"
+                className="mt-2 text-sm text-red-700"
+              >
+                {imageError}
+              </p>
+            )}
           </div>
 
           {mutation.isError && (
@@ -243,7 +336,7 @@ export default function NewRequestPage() {
             </Link>
             <button
               type="submit"
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || Boolean(imageError)}
               className="rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {mutation.isPending ? 'Submitting…' : 'Submit Request'}

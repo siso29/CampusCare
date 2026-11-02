@@ -28,7 +28,10 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/
 export class ApiError extends Error { constructor(public readonly status: number, message: string) { super(message); } }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null; }
 async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, credentials: 'include', headers: options.body ? { 'Content-Type': 'application/json', ...options.headers } : options.headers });
+  const headers = new Headers(options.headers);
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (options.body && !isFormData && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, credentials: 'include', headers });
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const message = isRecord(body) ? body.message : undefined;
@@ -43,7 +46,18 @@ export function logout(): Promise<{ success: boolean }> { return apiRequest('/au
 export function getCategoryLabel(category: RequestCategory): string { return categoryLabels[category]; }
 export function getStatusLabel(status: RequestStatus): string { return statusLabels[status]; }
 export function getPriorityLabel(priority: RequestPriority): string { return priorityLabels[priority]; }
+export function getMaintenanceRequestImageUrl(imageUrl: string): string { return new URL(imageUrl, API_BASE_URL).toString(); }
 export function getMaintenanceRequests(filters: { page?: number; limit?: number; search?: string; status?: RequestStatus; priority?: RequestPriority; category?: RequestCategory; signal?: AbortSignal } = {}): Promise<PaginatedRequests> { const p = new URLSearchParams(); p.set('page', String(filters.page ?? 1)); p.set('limit', String(filters.limit ?? 20)); if (filters.search) p.set('search', filters.search); if (filters.status) p.set('status', filters.status); if (filters.priority) p.set('priority', filters.priority); if (filters.category) p.set('category', filters.category); return apiRequest(`/maintenance-requests?${p}`, { signal: filters.signal }); }
+export function getMaintenanceRequest(id: string, signal?: AbortSignal): Promise<MaintenanceRequest> { return apiRequest(`/maintenance-requests/${encodeURIComponent(id)}`, { signal }); }
 export function getMaintenanceRequestSummary(signal?: AbortSignal): Promise<MaintenanceRequestSummary> { return apiRequest('/maintenance-requests/summary', { signal }); }
-export function createMaintenanceRequest(input: { title: string; description: string; category: RequestCategory; location: string; priority: RequestPriority }): Promise<MaintenanceRequest> { return apiRequest('/maintenance-requests', { method: 'POST', body: JSON.stringify(input) }); }
+export function createMaintenanceRequest(input: { title: string; description: string; category: RequestCategory; location: string; priority: RequestPriority; image?: File }): Promise<MaintenanceRequest> {
+  const { image, ...details } = input;
+  if (image) {
+    const formData = new FormData();
+    Object.entries(details).forEach(([key, value]) => formData.append(key, value));
+    formData.append('image', image);
+    return apiRequest('/maintenance-requests', { method: 'POST', body: formData });
+  }
+  return apiRequest('/maintenance-requests', { method: 'POST', body: JSON.stringify(details) });
+}
 export function formatRequestDate(value: string): string { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)); }

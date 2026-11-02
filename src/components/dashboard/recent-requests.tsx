@@ -92,9 +92,12 @@ export default function RecentRequests() {
               {requests.map((request) => (
                 <tr key={request.id} className="hover:bg-slate-50">
                   <td className="px-5 py-4">
-                    <p className="font-medium text-slate-900">
+                    <Link
+                      href={`/requests/${encodeURIComponent(request.id)}`}
+                      className="font-medium text-slate-900 hover:text-blue-700 hover:underline"
+                    >
                       {request.title}
-                    </p>
+                    </Link>
                     <p className="mt-1 text-xs text-slate-500">
                       {request.id} · {getCategoryLabel(request.category)}
                     </p>
