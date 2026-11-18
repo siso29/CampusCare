@@ -1,0 +1,394 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  STUDENT
+  MAINTENANCE_STAFF
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MaintenanceStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  ASSIGNED
+  IN_PROGRESS
+  ON_HOLD
+  RESOLVED
+  CLOSED
+  REJECTED
+  CANCELLED
+  REOPENED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  ACKNOWLEDGED
+  IN_PROGRESS
+  COMPLETED
+  REASSIGNED
+}
+
+enum NotificationType {
+  REQUEST_SUBMITTED
+  REQUEST_STATUS_UPDATED
+  REQUEST_ASSIGNED
+  REQUEST_COMMENT_ADDED
+  REQUEST_RESOLVED
+  REQUEST_REOPENED
+  SYSTEM_ALERT
+}
+
+model University {
+  id                  String               @id @default(uuid()) @db.Uuid
+  name                String               @db.VarChar(150)
+  code                String               @unique @db.VarChar(30)
+  slug                String               @unique @db.VarChar(80)
+  domain              String               @db.VarChar(100)
+  logoUrl             String?              @db.VarChar(255)
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+
+  campuses            Campus[]
+  departments         Department[]
+  users               User[]
+  maintenanceRequests MaintenanceRequest[]
+  auditLogs           AuditLog[]
+  systemSettings      SystemSetting[]
+
+  @@map("universities")
+}
+
+model Campus {
+  id                  String               @id @default(uuid()) @db.Uuid
+  universityId        String               @db.Uuid
+  university          University           @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  name                String               @db.VarChar(120)
+  code                String               @db.VarChar(30)
+  location            String?              @db.VarChar(255)
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+
+  buildings           Building[]
+  maintenanceRequests MaintenanceRequest[]
+
+  @@unique([universityId, code])
+  @@index([universityId])
+  @@map("campuses")
+}
+
+model Building {
+  id                  String               @id @default(uuid()) @db.Uuid
+  campusId            String               @db.Uuid
+  campus              Campus               @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  name                String               @db.VarChar(120)
+  code                String               @db.VarChar(30)
+  floors              Int                  @default(1)
+  type                String?              @db.VarChar(60)
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+
+  maintenanceRequests MaintenanceRequest[]
+
+  @@unique([campusId, code])
+  @@index([campusId])
+  @@map("buildings")
+}
+
+model Department {
+  id                  String               @id @default(uuid()) @db.Uuid
+  universityId        String               @db.Uuid
+  university          University           @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  name                String               @db.VarChar(120)
+  code                String               @db.VarChar(30)
+  type                String?              @db.VarChar(60)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+
+  users               User[]
+  maintenanceRequests MaintenanceRequest[]
+
+  @@unique([universityId, code])
+  @@index([universityId])
+  @@map("departments")
+}
+
+model User {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  universityId           String?                 @db.Uuid
+  university             University?             @relation(fields: [universityId], references: [id], onDelete: Restrict)
+  departmentId           String?                 @db.Uuid
+  department             Department?             @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  email                  String                  @unique @db.VarChar(254)
+  passwordHash           String                  @db.VarChar(255)
+  firstName              String                  @db.VarChar(80)
+  lastName               String                  @db.VarChar(80)
+  phone                  String?                 @db.VarChar(30)
+  studentId              String?                 @db.VarChar(50)
+  role                   UserRole                @default(STUDENT)
+  status                 UserStatus              @default(ACTIVE)
+  createdAt              DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                @updatedAt @db.Timestamptz(3)
+
+  sessions               Session[]
+  emailTokens            EmailVerificationToken[]
+  resetTokens            PasswordResetToken[]
+  notificationPreference NotificationPreference?
+  reportedRequests       MaintenanceRequest[]    @relation("ReportedRequests")
+  assignments            MaintenanceAssignment[] @relation("AssignedStaff")
+  assignedByAssignments  MaintenanceAssignment[] @relation("AssignedByAdmin")
+  comments               MaintenanceComment[]
+  attachments            MaintenanceAttachment[]
+  statusHistories        MaintenanceStatusHistory[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+
+  @@index([universityId, role, status])
+  @@map("users")
+}
+
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  tokenHash  String   @unique @db.Char(64)
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime @db.Timestamptz(3)
+  ipAddress  String?  @db.VarChar(64)
+  userAgent  String?  @db.VarChar(512)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  lastUsedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique @db.Char(64)
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique @db.Char(64)
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model NotificationPreference {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @unique @db.Uuid
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailNotifications  Boolean  @default(true)
+  inAppNotifications  Boolean  @default(true)
+  statusChangeAlerts  Boolean  @default(true)
+  assignmentAlerts    Boolean  @default(true)
+  commentAlerts       Boolean  @default(true)
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("notification_preferences")
+}
+
+model MaintenanceCategory {
+  id                  String               @id @default(uuid()) @db.Uuid
+  name                String               @db.VarChar(80)
+  code                String               @unique @db.VarChar(40)
+  description         String?              @db.VarChar(255)
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+
+  maintenanceRequests MaintenanceRequest[]
+
+  @@map("maintenance_categories")
+}
+
+model MaintenanceRequest {
+  id              String                     @id @default(uuid()) @db.Uuid
+  requestNumber   String                     @unique @db.VarChar(40)
+  universityId    String                     @db.Uuid
+  university      University                 @relation(fields: [universityId], references: [id], onDelete: Restrict)
+  campusId        String                     @db.Uuid
+  campus          Campus                     @relation(fields: [campusId], references: [id], onDelete: Restrict)
+  buildingId      String                     @db.Uuid
+  building        Building                   @relation(fields: [buildingId], references: [id], onDelete: Restrict)
+  departmentId    String?                    @db.Uuid
+  department      Department?                @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  categoryId      String                     @db.Uuid
+  category        MaintenanceCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  reporterId      String                     @db.Uuid
+  reporter        User                       @relation("ReportedRequests", fields: [reporterId], references: [id], onDelete: Restrict)
+  title           String                     @db.VarChar(120)
+  description     String                     @db.Text
+  locationDetails String                     @db.VarChar(200)
+  priority        MaintenancePriority        @default(MEDIUM)
+  status          MaintenanceStatus          @default(SUBMITTED)
+  resolvedAt      DateTime?                  @db.Timestamptz(3)
+  closedAt        DateTime?                  @db.Timestamptz(3)
+  createdAt       DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                   @updatedAt @db.Timestamptz(3)
+
+  assignments     MaintenanceAssignment[]
+  comments        MaintenanceComment[]
+  attachments     MaintenanceAttachment[]
+  statusHistories MaintenanceStatusHistory[]
+
+  @@index([universityId, status])
+  @@index([universityId, priority])
+  @@index([reporterId])
+  @@index([createdAt])
+  @@map("maintenance_requests")
+}
+
+model MaintenanceAssignment {
+  id             String           @id @default(uuid()) @db.Uuid
+  requestId      String           @db.Uuid
+  request        MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  staffId        String           @db.Uuid
+  staff          User             @relation("AssignedStaff", fields: [staffId], references: [id], onDelete: Restrict)
+  assignedById   String           @db.Uuid
+  assignedBy     User             @relation("AssignedByAdmin", fields: [assignedById], references: [id], onDelete: Restrict)
+  status         AssignmentStatus @default(ASSIGNED)
+  notes          String?          @db.VarChar(1000)
+  acknowledgedAt DateTime?        @db.Timestamptz(3)
+  completedAt    DateTime?        @db.Timestamptz(3)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@index([requestId])
+  @@index([staffId, status])
+  @@map("maintenance_assignments")
+}
+
+model MaintenanceComment {
+  id         String             @id @default(uuid()) @db.Uuid
+  requestId  String             @db.Uuid
+  request    MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId   String             @db.Uuid
+  author     User               @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  message    String             @db.Text
+  isInternal Boolean            @default(false)
+  createdAt  DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime           @updatedAt @db.Timestamptz(3)
+
+  @@index([requestId])
+  @@map("maintenance_comments")
+}
+
+model MaintenanceAttachment {
+  id               String             @id @default(uuid()) @db.Uuid
+  requestId        String             @db.Uuid
+  request          MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  uploaderId       String             @db.Uuid
+  uploader         User               @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+  storageKey       String             @unique @db.VarChar(255)
+  originalFilename String             @db.VarChar(255)
+  mimeType         String             @db.VarChar(100)
+  fileSizeBytes    Int
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@index([requestId])
+  @@map("maintenance_attachments")
+}
+
+model MaintenanceStatusHistory {
+  id         String             @id @default(uuid()) @db.Uuid
+  requestId  String             @db.Uuid
+  request    MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actorId    String             @db.Uuid
+  actor      User               @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  fromStatus MaintenanceStatus?
+  toStatus   MaintenanceStatus
+  reason     String?            @db.VarChar(1000)
+  createdAt  DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@index([requestId])
+  @@map("maintenance_status_histories")
+}
+
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String           @db.Uuid
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String           @db.VarChar(150)
+  message    String           @db.VarChar(1000)
+  type       NotificationType @default(SYSTEM_ALERT)
+  resourceId String?          @db.Uuid
+  isRead     Boolean          @default(false)
+  readAt     DateTime?        @db.Timestamptz(3)
+  createdAt  DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id           String      @id @default(uuid()) @db.Uuid
+  universityId String?     @db.Uuid
+  university   University? @relation(fields: [universityId], references: [id], onDelete: SetNull)
+  actorId      String?     @db.Uuid
+  actor        User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action       String      @db.VarChar(100)
+  entityType   String      @db.VarChar(80)
+  entityId     String?     @db.VarChar(80)
+  details      Json?
+  ipAddress    String?     @db.VarChar(64)
+  userAgent    String?     @db.VarChar(512)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([universityId, createdAt])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id           String      @id @default(uuid()) @db.Uuid
+  universityId String?     @db.Uuid
+  university   University? @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  key          String      @db.VarChar(100)
+  value        String      @db.Text
+  description  String?     @db.VarChar(255)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@unique([universityId, key])
+  @@map("system_settings")
+}
